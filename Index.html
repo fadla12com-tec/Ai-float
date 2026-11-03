@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>AI Float</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;font-family:-apple-system,system-ui,sans-serif;background:#0f172a;color:#e2e8f0;overflow:hidden}
+#app{display:flex;flex-direction:column;height:100vh;height:100dvh}
+#hdr{padding:10px 12px;background:linear-gradient(135deg,#6366f1,#8b5cf6);font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+#hdr span:last-child{font-size:11px;opacity:.85;font-weight:400}
+#msgs{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:8px}
+#msgs::-webkit-scrollbar{width:4px}#msgs::-webkit-scrollbar-thumb{background:#334;border-radius:2px}
+.msg{max-width:88%;padding:8px 11px;border-radius:12px;font-size:13px;line-height:1.5;word-wrap:break-word;white-space:pre-wrap;animation:in .2s}
+@keyframes in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.msg.u{align-self:flex-end;background:#6366f1;color:#fff;border-bottom-right-radius:4px}
+.msg.a{align-self:flex-start;background:#2a2a3e;border-bottom-left-radius:4px}
+.msg.e{align-self:flex-start;background:#7f1d1d;border-bottom-left-radius:4px;color:#fecaca}
+.msg.a.typing::after{content:'▋';color:#818cf8;animation:blink .8s infinite;margin-left:1px}
+@keyframes blink{50%{opacity:0}}
+.msg code{background:rgba(0,0,0,.3);padding:1px 4px;border-radius:3px;font-size:12px;font-family:monospace}
+.msg pre{background:rgba(0,0,0,.4);padding:8px;border-radius:6px;overflow-x:auto;margin:4px 0;font-size:12px}
+#inp-area{padding:8px;border-top:1px solid #222;display:flex;gap:6px;align-items:flex-end;flex-shrink:0}
+#inp{flex:1;background:#1e1e2e;border:1px solid #333;border-radius:18px;padding:8px 12px;color:#fff;font-size:13px;font-family:inherit;resize:none;max-height:80px;min-height:36px;outline:none}
+#inp:focus{border-color:#6366f1}
+#inp::placeholder{color:#64748b}
+#send{width:36px;height:36px;border-radius:50%;border:none;background:#6366f1;color:#fff;font-size:15px;cursor:pointer;flex-shrink:0}
+#send:disabled{opacity:.4}
+#cfg{position:absolute;inset:0;background:#0f172a;padding:14px;display:none;flex-direction:column;gap:8px;overflow-y:auto;z-index:5}
+#cfg.on{display:flex}
+#cfg h3{font-size:14px;margin-bottom:4px}
+#cfg label{font-size:11px;color:#94a3b8;margin-bottom:2px;display:block}
+#cfg input,#cfg textarea{width:100%;background:#1e1e2e;border:1px solid #333;border-radius:8px;padding:7px 10px;color:#fff;font-size:12px;font-family:inherit;outline:none}
+#cfg input:focus,#cfg textarea:focus{border-color:#6366f1}
+#cfg textarea{min-height:50px;resize:vertical}
+#cfg button{padding:9px;border-radius:8px;border:none;font-size:12px;font-weight:600;cursor:pointer;margin-top:2px}
+#cfg .save{background:#6366f1;color:#fff}
+#cfg .back{background:#2a2a3e;color:#e2e8f0}
+#gear{background:none;border:none;color:#fff;font-size:15px;cursor:pointer;padding:0 4px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hdr">
+    <span>🤖 AI Assistant</span>
+    <span><button id="gear">⚙️</button> <button id="gear" onclick="clearAll()" style="background:none;border:none;color:#fff;font-size:15px;cursor:pointer">🗑</button></span>
+  </div>
+  <div id="msgs"></div>
+  <div id="inp-area">
+    <textarea id="inp" placeholder="Tanya apa saja..." rows="1"></textarea>
+    <button id="send">➤</button>
+  </div>
+  <div id="cfg">
+    <h3>⚙️ Pengaturan API</h3>
+    <div><label>Preset</label>
+      <select id="preset" style="width:100%;background:#1e1e2e;border:1px solid #333;border-radius:8px;padding:7px 10px;color:#fff;font-size:12px">
+        <option value="">— pilih cepat —</option>
+        <option value="groq">Groq (gratis)</option>
+        <option value="openai">OpenAI</option>
+        <option value="gemini">Gemini</option>
+        <option value="openrouter">OpenRouter</option>
+        <option value="ollama">Ollama (lokal)</option>
+      </select>
+    </div>
+    <div><label>Endpoint URL</label><input id="ep"></div>
+    <div><label>API Key</label><input id="ak" type="password"></div>
+    <div><label>Model</label><input id="md"></div>
+    <div><label>System Prompt</label><textarea id="sp"></textarea></div>
+    <button class="save" id="save">💾 Simpan</button>
+    <button class="back" id="back">← Kembali</button>
+  </div>
+</div>
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  const DEF={ep:'https://api.groq.com/openai/v1/chat/completions',ak:'',md:'llama-3.3-70b-versatile',sp:'Kamu asisten AI ramah dan ringkas. Jawab bahasa Indonesia.'};
+  let cfg={...DEF,...JSON.parse(localStorage.getItem('ai')||'{}')};
+  let hist=JSON.parse(localStorage.getItem('aih')||'[]');
+  let busy=false;
+
+  function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+  function md(t){
+    let h=esc(t),cb=[];
+    h=h.replace(/```(\w*)\n?([\s\S]*?)```/g,(m,l,c)=>{cb.push('<pre><code>'+c.trim()+'</code></pre>');return'\0'+(cb.length-1)+'\0'});
+    h=h.replace(/`([^`\n]+)`/g,'<code>$1</code>');
+    h=h.replace(/\*\*([^*\n]+)\*\*/g,'<strong>$1</strong>');
+    h=h.replace(/(^|[^*])\*([^*\n]+)\*/g,'$1<em>$2</em>');
+    h=h.replace(/\0(\d+)\0/g,(m,i)=>cb[i]);
+    return h;
+  }
+  function add(role,txt){
+    const d=document.createElement('div');
+    d.className='msg '+role;
+    d.innerHTML=role==='u'?esc(txt):md(txt);
+    $('msgs').appendChild(d); $('msgs').scrollTop=$('msgs').scrollHeight; return d;
+  }
+  function clearAll(){if(confirm('Hapus semua chat?')){hist=[];localStorage.removeItem('aih');$('msgs').innerHTML='';welcome()}}
+  window.clearAll=clearAll;
+  function welcome(){add('a','Hai 👋 Aku asisten AI. Klik ⚙️ untuk setting API key (Groq gratis & cepat).');}
+
+  if(hist.length){hist.forEach(m=>add(m.role==='user'?'u':'a',m.content));}
+  else welcome();
+
+  $('gear').onclick=()=>{
+    $('ep').value=cfg.ep;$('ak').value=cfg.ak;$('md').value=cfg.md;$('sp').value=cfg.sp;
+    $('cfg').classList.add('on');
+  };
+  $('back').onclick=()=>$('cfg').classList.remove('on');
+  $('save').onclick=()=>{
+    cfg={ep:$('ep').value.trim()||DEF.ep,ak:$('ak').value.trim(),md:$('md').value.trim()||DEF.md,sp:$('sp').value.trim()||DEF.sp};
+    localStorage.setItem('ai',JSON.stringify(cfg));
+    $('cfg').classList.remove('on');
+    add('a','✅ Pengaturan disimpan.');
+  };
+  const P={groq:{e:'https://api.groq.com/openai/v1/chat/completions',m:'llama-3.3-70b-versatile'},
+           openai:{e:'https://api.openai.com/v1/chat/completions',m:'gpt-4o-mini'},
+           gemini:{e:'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',m:'gemini-2.0-flash'},
+           openrouter:{e:'https://openrouter.ai/api/v1/chat/completions',m:'meta-llama/llama-3.3-70b-instruct'},
+           ollama:{e:'http://localhost:11434/v1/chat/completions',m:'llama3.2'}};
+  $('preset').onchange=e=>{const p=P[e.target.value];if(p){$('ep').value=p.e;$('md').value=p.m}};
+
+  const ta=$('inp');
+  ta.addEventListener('input',()=>{ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,80)+'px'});
+  ta.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send()}});
+  $('send').onclick=send;
+
+  async function send(){
+    const t=ta.value.trim(); if(!t||busy) return;
+    if(!cfg.ak&&!cfg.ep.includes('localhost')){alert('API key belum diisi. Klik ⚙️ dulu.');return}
+    ta.value='';ta.style.height='auto';
+    hist.push({role:'user',content:t});add('u',t);persist();
+    busy=true;$('send').disabled=true;
+    const b=add('a','▋'); b.classList.add('typing');
+    let full='';
+    try{
+      const r=await fetch(cfg.ep,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+cfg.ak},
+        body:JSON.stringify({model:cfg.md,messages:[{role:'system',content:cfg.sp},...hist],stream:true,temperature:0.7})});
+      if(!r.ok){throw new Error('HTTP '+r.status+' '+(await r.text()).slice(0,150))}
+      const rd=r.body.getReader(),dec=new TextDecoder();let buf='';
+      while(true){
+        const{done,value}=await rd.read(); if(done)break;
+        buf+=dec.decode(value,{stream:true});
+        const lines=buf.split('\n');buf=lines.pop();
+        for(const ln of lines){
+          const s=ln.trim();if(!s.startsWith('data:'))continue;
+          const d=s.slice(5).trim();if(d==='[DONE]'||!d)continue;
+          try{const j=JSON.parse(d);const c=j.choices?.[0]?.delta?.content;
+            if(c){full+=c;b.innerHTML=md(full);b.classList.add('typing');$('msgs').scrollTop=$('msgs').scrollHeight}}catch(e){}
+        }
+      }
+      b.classList.remove('typing');
+      if(!full){b.className='msg e';b.textContent='(kosong, cek model/endpoint)'}
+      else{hist.push({role:'assistant',content:full});persist()}
+    }catch(e){
+      b.classList.remove('typing');b.className='msg e';b.textContent='❌ '+e.message;
+    }finally{busy=false;$('send').disabled=false;$('msgs').scrollTop=$('msgs').scrollHeight}
+  }
+  function persist(){localStorage.setItem('aih',JSON.stringify(hist.slice(-40)))}
+})();
+</script>
+</body>
+                               </html>
